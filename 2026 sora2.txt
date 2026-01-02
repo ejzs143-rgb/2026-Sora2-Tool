@@ -1,0 +1,1251 @@
+<!DOCTYPE html>
+
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sora 2 プロンプト作成ツール Final</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+        .gradient-bg {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .step-indicator {
+            transition: all 0.3s ease;
+        }
+        .step-indicator.active {
+            background: #667eea;
+            color: white;
+            transform: scale(1.1);
+        }
+        .step-indicator.completed {
+            background: #10b981;
+            color: white;
+        }
+        .tab-active {
+            border-bottom: 3px solid #667eea;
+            color: #667eea;
+        }
+        .edit-section {
+            border-left: 4px solid #667eea;
+            padding-left: 12px;
+            margin-bottom: 16px;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+```
+<script type="text/babel">
+    const { useState, useEffect } = React;
+
+    const TEMPLATES = {
+        cinematic: {
+            name: 'シネマティック',
+            description: '映画のようなプロフェッショナルな映像',
+            icon: '🎬',
+            basePrompt: {
+                format: 'Cinematic, 180° shutter, film grain, photorealistic',
+                cameraDefaults: 'Smooth tracking shot, 35mm lens, shallow depth of field',
+                lightingDefaults: 'Dramatic lighting, rim light, high contrast',
+                paletteDefaults: 'Cinematic color grading, teal and orange'
+            }
+        },
+        ugc: {
+            name: 'UGC/SNS',
+            description: 'TikTok・Instagram向けのカジュアルな映像',
+            icon: '📱',
+            basePrompt: {
+                format: 'UGC style, iPhone camera, handheld, authentic feel',
+                cameraDefaults: 'Handheld selfie mode, slightly shaky, natural framing',
+                lightingDefaults: 'Natural light, slightly overexposed, no filters',
+                paletteDefaults: 'Raw, unfiltered, realistic colors'
+            }
+        },
+        anime: {
+            name: 'アニメ調',
+            description: 'Studio Ghibli風のアニメーション',
+            icon: '🌸',
+            basePrompt: {
+                format: 'Hand-drawn animation, Studio Ghibli watercolor style',
+                cameraDefaults: 'Gentle pan, smooth motion, dreamlike movement',
+                lightingDefaults: 'Soft sunlight, dappled light, warm glow',
+                paletteDefaults: 'Pastel palette, warm emotional tones'
+            }
+        },
+        product: {
+            name: '製品紹介',
+            description: 'プロダクト・プロモーション映像',
+            icon: '📦',
+            basePrompt: {
+                format: '4K studio product shot, professional commercial',
+                cameraDefaults: '360-degree rotation, macro lens, controlled motion',
+                lightingDefaults: 'Three-point studio lighting, clean highlights',
+                paletteDefaults: 'Clean, minimal, high contrast'
+            }
+        },
+        documentary: {
+            name: 'ドキュメンタリー',
+            description: 'リアルなドキュメンタリー風',
+            icon: '📹',
+            basePrompt: {
+                format: 'Documentary style, realistic, observational',
+                cameraDefaults: 'Handheld documentary camera, natural framing',
+                lightingDefaults: 'Natural available light, realistic shadows',
+                paletteDefaults: 'Natural color grading, realistic tones'
+            }
+        }
+    };
+
+    const CAMERA_MOVEMENTS = [
+        { value: 'static', label: '固定' },
+        { value: 'tracking', label: 'トラッキング' },
+        { value: 'pan', label: 'パン' },
+        { value: 'dolly', label: 'ドリー' },
+        { value: 'handheld', label: 'ハンドヘルド' },
+        { value: 'aerial', label: 'エアリアル' }
+    ];
+
+    const SHOT_TYPES = [
+        { value: 'wide', label: 'ワイド' },
+        { value: 'medium', label: 'ミディアム' },
+        { value: 'closeup', label: 'クローズアップ' },
+        { value: 'extreme_closeup', label: '超クローズアップ' }
+    ];
+
+    const LIGHTING_MOODS = [
+        { value: 'golden_hour', label: 'ゴールデンアワー' },
+        { value: 'blue_hour', label: 'ブルーアワー' },
+        { value: 'dramatic', label: 'ドラマティック' },
+        { value: 'soft', label: 'ソフト' },
+        { value: 'neon', label: 'ネオン' },
+        { value: 'natural', label: 'ナチュラル' }
+    ];
+
+    const LANGUAGES = [
+        { code: 'ja', name: '日本語', flag: '🇯🇵' },
+        { code: 'en', name: 'English', flag: '🇺🇸' },
+        { code: 'ko', name: '한국어', flag: '🇰🇷' },
+        { code: 'zh', name: '中文', flag: '🇨🇳' }
+    ];
+
+    function Sora2PromptGenerator() {
+        const [currentTab, setCurrentTab] = useState('generator');
+        const [step, setStep] = useState(0);
+        const [promptStyle, setPromptStyle] = useState('natural'); // 'natural' or 'structured'
+        const [formData, setFormData] = useState({
+            genre: '',
+            concept: '',
+            subject: '',
+            location: '',
+            timeOfDay: '',
+            shotType: 'medium',
+            cameraMovement: 'tracking',
+            lighting: 'golden_hour',
+            palette: '',
+            action1: '',
+            action2: '',
+            action3: '',
+            dialogue: '',
+            ambientSound: '',
+            sfx: '',
+            duration: '10',
+            constraints: '',
+            language: 'en',
+            voiceGender: 'neutral'
+        });
+        const [generatedPrompt, setGeneratedPrompt] = useState('');
+        const [savedPrompts, setSavedPrompts] = useState([]);
+        const [batchVariations, setBatchVariations] = useState([]);
+        const [editMode, setEditMode] = useState('view');
+        const [editedPrompt, setEditedPrompt] = useState('');
+        const [promptHistory, setPromptHistory] = useState([]);
+        const [historyIndex, setHistoryIndex] = useState(-1);
+        const [showComparison, setShowComparison] = useState(false);
+
+        const steps = [
+            { title: '1. スタイル', icon: '🎨' },
+            { title: '2. ジャンル', icon: '🎯' },
+            { title: '3. コンセプト', icon: '💡' },
+            { title: '4. シーン', icon: '🎬' },
+            { title: '5. カメラ', icon: '📸' },
+            { title: '6. 照明', icon: '💫' },
+            { title: '7. アクション', icon: '🎭' },
+            { title: '8. 音声', icon: '🔊' },
+            { title: '9. 完成', icon: '✨' }
+        ];
+
+        useEffect(() => {
+            const saved = localStorage.getItem('sora2_saved_prompts');
+            if (saved) {
+                setSavedPrompts(JSON.parse(saved));
+            }
+        }, []);
+
+        useEffect(() => {
+            if (savedPrompts.length > 0) {
+                localStorage.setItem('sora2_saved_prompts', JSON.stringify(savedPrompts));
+            }
+        }, [savedPrompts]);
+
+        const updateFormData = (key, value) => {
+            setFormData(prev => ({ ...prev, [key]: value }));
+        };
+
+        // ★★★ コンセプト自動最適化 ★★★
+        const optimizeConcept = (concept) => {
+            let optimized = concept;
+            
+            // 指示文の除去
+            optimized = optimized.replace(/を?作成して(ください)?/g, '');
+            optimized = optimized.replace(/を?作って(ください)?/g, '');
+            optimized = optimized.replace(/を?生成して(ください)?/g, '');
+            optimized = optimized.replace(/してください/g, '');
+            optimized = optimized.replace(/お願いします/g, '');
+            
+            // 余分な空白削除
+            optimized = optimized.trim().replace(/\s+/g, ' ');
+            
+            return optimized;
+        };
+
+        // ★★★ 自然文スタイルのプロンプト生成 ★★★
+        const generateNaturalPrompt = () => {
+            const template = TEMPLATES[formData.genre];
+            if (!template) return '';
+
+            const optimizedConcept = optimizeConcept(formData.concept);
+            
+            let prompt = '';
+
+            // より自然な文章形式で生成
+            if (optimizedConcept) {
+                prompt += `${optimizedConcept}. `;
+            }
+
+            if (formData.subject) {
+                prompt += `${formData.subject} `;
+            }
+
+            if (formData.location) {
+                prompt += `in ${formData.location}`;
+                if (formData.timeOfDay) {
+                    prompt += `, ${formData.timeOfDay}`;
+                }
+                prompt += '. ';
+            }
+
+            // カメラワークを自然に統合
+            const shotTypeLabel = SHOT_TYPES.find(s => s.value === formData.shotType)?.label || 'Medium';
+            const movementLabel = CAMERA_MOVEMENTS.find(m => m.value === formData.cameraMovement)?.label || 'tracking';
+            prompt += `Shot with ${shotTypeLabel.toLowerCase()} ${movementLabel.toLowerCase()} camera movement. `;
+
+            // ライティングを自然に統合
+            const lightingLabel = LIGHTING_MOODS.find(l => l.value === formData.lighting)?.label || 'Natural';
+            prompt += `${lightingLabel} lighting`;
+            if (formData.palette) {
+                prompt += ` with ${formData.palette} color palette`;
+            }
+            prompt += '. ';
+
+            // アクションを自然な流れで
+            const actions = [formData.action1, formData.action2, formData.action3].filter(Boolean);
+            if (actions.length > 0) {
+                prompt += actions.join(', then ') + '. ';
+            }
+
+            // 音声
+            if (formData.dialogue) {
+                const selectedLang = LANGUAGES.find(l => l.code === formData.language);
+                prompt += `Dialogue (${selectedLang ? selectedLang.name : 'English'}): "${formData.dialogue}". `;
+            }
+
+            if (formData.ambientSound || formData.sfx) {
+                prompt += 'Audio: ';
+                const audioElements = [];
+                if (formData.ambientSound) audioElements.push(formData.ambientSound);
+                if (formData.sfx) audioElements.push(formData.sfx);
+                prompt += audioElements.join(', ') + '. ';
+            }
+
+            // スタイル設定を最後に軽く追加
+            prompt += `${template.basePrompt.format}. `;
+
+            if (formData.constraints) {
+                prompt += `Constraints: ${formData.constraints}`;
+            }
+
+            return prompt.trim();
+        };
+
+        // ★★★ 構造化スタイルのプロンプト生成 ★★★
+        const generateStructuredPrompt = () => {
+            const template = TEMPLATES[formData.genre];
+            if (!template) return '';
+
+            const optimizedConcept = optimizeConcept(formData.concept);
+            
+            let prompt = '';
+
+            if (optimizedConcept) {
+                prompt += `Overview/Concept:\n${optimizedConcept}\n\n`;
+            }
+
+            const selectedLang = LANGUAGES.find(l => l.code === formData.language);
+            prompt += `Language & Voice:\nPrimary language: ${selectedLang ? selectedLang.name : 'English'}\n`;
+            if (formData.dialogue) {
+                prompt += `Voice: ${formData.voiceGender} tone\n`;
+            }
+            prompt += `\n`;
+
+            prompt += `Format & Style:\n${template.basePrompt.format}\n\n`;
+
+            const shotTypeLabel = SHOT_TYPES.find(s => s.value === formData.shotType)?.label || 'Medium';
+            const movementLabel = CAMERA_MOVEMENTS.find(m => m.value === formData.cameraMovement)?.label || 'tracking';
+            prompt += `Camera:\n${shotTypeLabel} shot, ${movementLabel} movement\n`;
+            prompt += `${template.basePrompt.cameraDefaults}\n\n`;
+
+            prompt += `Scene:\n`;
+            if (formData.location) prompt += `Location: ${formData.location}\n`;
+            if (formData.timeOfDay) prompt += `Time: ${formData.timeOfDay}\n`;
+            if (formData.subject) prompt += `Subject: ${formData.subject}\n`;
+            prompt += `\n`;
+
+            const lightingLabel = LIGHTING_MOODS.find(l => l.value === formData.lighting)?.label || 'Natural';
+            prompt += `Lighting & Palette:\n${lightingLabel} lighting\n`;
+            if (formData.palette) {
+                prompt += `Palette: ${formData.palette}\n`;
+            } else {
+                prompt += `${template.basePrompt.paletteDefaults}\n`;
+            }
+            prompt += `\n`;
+
+            if (formData.action1 || formData.action2 || formData.action3) {
+                prompt += `Action Beats:\n`;
+                if (formData.action1) prompt += `- Beat 1 (0-3s): ${formData.action1}\n`;
+                if (formData.action2) prompt += `- Beat 2 (3-6s): ${formData.action2}\n`;
+                if (formData.action3) prompt += `- Beat 3 (6-${formData.duration}s): ${formData.action3}\n`;
+                prompt += `\n`;
+            }
+
+            if (formData.dialogue || formData.ambientSound || formData.sfx) {
+                prompt += `Audio:\n`;
+                if (formData.dialogue) {
+                    prompt += `Dialogue (${selectedLang ? selectedLang.name : 'English'}): "${formData.dialogue}"\n`;
+                }
+                if (formData.ambientSound) prompt += `Ambient: ${formData.ambientSound}\n`;
+                if (formData.sfx) prompt += `SFX: ${formData.sfx}\n`;
+                prompt += `\n`;
+            }
+
+            if (formData.constraints) {
+                prompt += `Constraints:\n${formData.constraints}\n`;
+            } else {
+                prompt += `Constraints:\nNo lens flare, no text overlays, avoid Dutch angles\n`;
+            }
+
+            return prompt;
+        };
+
+        const generatePrompt = () => {
+            if (promptStyle === 'natural') {
+                return generateNaturalPrompt();
+            } else {
+                return generateStructuredPrompt();
+            }
+        };
+
+        const handleNext = () => {
+            if (step < steps.length - 1) {
+                setStep(step + 1);
+            }
+            if (step === steps.length - 2) {
+                const newPrompt = generatePrompt();
+                setGeneratedPrompt(newPrompt);
+                setEditedPrompt(newPrompt);
+                addToHistory(newPrompt);
+            }
+        };
+
+        const handleBack = () => {
+            if (step > 0) {
+                setStep(step - 1);
+            }
+        };
+
+        const addToHistory = (prompt) => {
+            const newHistory = [...promptHistory.slice(0, historyIndex + 1), prompt];
+            setPromptHistory(newHistory);
+            setHistoryIndex(newHistory.length - 1);
+        };
+
+        const undo = () => {
+            if (historyIndex > 0) {
+                setHistoryIndex(historyIndex - 1);
+                setEditedPrompt(promptHistory[historyIndex - 1]);
+            }
+        };
+
+        const redo = () => {
+            if (historyIndex < promptHistory.length - 1) {
+                setHistoryIndex(historyIndex + 1);
+                setEditedPrompt(promptHistory[historyIndex + 1]);
+            }
+        };
+
+        const applyQuickAdjustment = (type) => {
+            let adjusted = editedPrompt;
+            
+            switch(type) {
+                case 'more_detail':
+                    adjusted = adjusted.replace(/Medium shot/gi, 'Extreme close-up shot');
+                    adjusted = adjusted.replace(/ミディアム/gi, '超クローズアップ');
+                    adjusted += '\n\nAdditional Details: High detail, sharp focus, professional grade';
+                    break;
+                case 'simplify':
+                    adjusted = adjusted.replace(/Extreme close-up/gi, 'Medium shot');
+                    adjusted = adjusted.replace(/超クローズアップ/gi, 'ミディアム');
+                    break;
+                case 'dramatic':
+                    adjusted = adjusted.replace(/Natural lighting/gi, 'Dramatic high-contrast lighting');
+                    adjusted = adjusted.replace(/ナチュラル/gi, 'ドラマティック');
+                    break;
+                case 'natural':
+                    adjusted = adjusted.replace(/Dramatic/gi, 'Natural');
+                    adjusted = adjusted.replace(/ドラマティック/gi, 'ナチュラル');
+                    break;
+            }
+            
+            setEditedPrompt(adjusted);
+            addToHistory(adjusted);
+        };
+
+        const getAIImprovementTemplate = () => {
+            return `以下のSora 2プロンプトを最適化してください：
+```
+
+【現在のプロンプト】
+${editedPrompt}
+
+【改善ポイント】
+
+1. より自然な英語表現に修正
+1. 映画用語を適切に使用
+1. より効果的な演出提案
+1. 物理的に矛盾する部分の修正
+1. Sora 2のガードレールに引っかからない安全な表現
+
+【出力形式】
+改善されたプロンプトをそのまま出力してください。`;
+};
+
+```
+        const copyToClipboard = (text) => {
+            navigator.clipboard.writeText(text);
+            alert('コピーしました！');
+        };
+
+        const savePrompt = () => {
+            const promptName = prompt(`プロンプト名:`, formData.concept || '新規');
+            if (promptName) {
+                const newPrompt = {
+                    id: Date.now(),
+                    name: promptName,
+                    data: formData,
+                    prompt: editedPrompt,
+                    style: promptStyle,
+                    createdAt: new Date().toISOString()
+                };
+                setSavedPrompts(prev => [newPrompt, ...prev]);
+                alert('保存しました！');
+            }
+        };
+
+        const loadPrompt = (saved) => {
+            setFormData(saved.data);
+            setGeneratedPrompt(saved.prompt);
+            setEditedPrompt(saved.prompt);
+            if (saved.style) setPromptStyle(saved.style);
+            setCurrentTab('generator');
+            setStep(steps.length - 1);
+        };
+
+        const deletePrompt = (id) => {
+            if (confirm('削除しますか？')) {
+                setSavedPrompts(prev => prev.filter(p => p.id !== id));
+            }
+        };
+
+        const generateBatchVariations = () => {
+            const base = editedPrompt;
+            const variations = [
+                { name: 'オリジナル', prompt: base, changes: 'ベース' },
+                { name: 'カメラ変更', prompt: base.replace(/Medium/gi, 'Close-up').replace(/ミディアム/gi, 'クローズアップ'), changes: 'Close-up' },
+                { name: '照明変更', prompt: base.replace(/golden/gi, 'blue').replace(/ゴールデン/gi, 'ブルー'), changes: 'Blue hour' },
+                { name: 'テンポ変更', prompt: base + '\n\nPacing: Slow motion', changes: 'Slow motion' }
+            ];
+            setBatchVariations(variations);
+        };
+
+        const canProceed = () => {
+            switch(step) {
+                case 0: return true; // スタイル選択は常にOK
+                case 1: return formData.genre !== '';
+                case 2: return formData.concept !== '';
+                case 3: return formData.subject !== '' && formData.location !== '';
+                default: return true;
+            }
+        };
+
+        const renderEditPanel = () => {
+            if (editMode === 'view') return null;
+
+            if (editMode === 'direct') {
+                return (
+                    <div className="bg-white rounded-xl p-6 mb-6">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-lg font-bold">✏️ 直接編集モード</h3>
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={undo}
+                                    disabled={historyIndex <= 0}
+                                    className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50"
+                                >
+                                    ↶ 戻る
+                                </button>
+                                <button
+                                    onClick={redo}
+                                    disabled={historyIndex >= promptHistory.length - 1}
+                                    className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50"
+                                >
+                                    ↷ 進む
+                                </button>
+                                <button
+                                    onClick={() => setEditMode('view')}
+                                    className="px-3 py-1 bg-green-600 text-white rounded"
+                                >
+                                    完了
+                                </button>
+                            </div>
+                        </div>
+                        <textarea
+                            value={editedPrompt}
+                            onChange={(e) => setEditedPrompt(e.target.value)}
+                            onBlur={(e) => {
+                                if (e.target.value !== promptHistory[historyIndex]) {
+                                    addToHistory(e.target.value);
+                                }
+                            }}
+                            className="w-full h-96 p-4 border-2 rounded-lg font-mono text-sm"
+                        />
+                    </div>
+                );
+            }
+
+            if (editMode === 'section') {
+                return (
+                    <div className="bg-white rounded-xl p-6 mb-6">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-lg font-bold">🎯 セクション別編集</h3>
+                            <button
+                                onClick={() => setEditMode('view')}
+                                className="px-3 py-1 bg-green-600 text-white rounded"
+                            >
+                                完了
+                            </button>
+                        </div>
+                        <div className="space-y-4">
+                            <div className="edit-section">
+                                <h4 className="font-semibold mb-2">📝 コンセプト</h4>
+                                <input
+                                    type="text"
+                                    value={formData.concept}
+                                    onChange={(e) => {
+                                        updateFormData('concept', e.target.value);
+                                        const newPrompt = generatePrompt();
+                                        setEditedPrompt(newPrompt);
+                                        addToHistory(newPrompt);
+                                    }}
+                                    className="w-full px-3 py-2 border-2 rounded"
+                                />
+                            </div>
+                            <div className="edit-section">
+                                <h4 className="font-semibold mb-2">📸 カメラ</h4>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <select
+                                        value={formData.shotType}
+                                        onChange={(e) => {
+                                            updateFormData('shotType', e.target.value);
+                                            const newPrompt = generatePrompt();
+                                            setEditedPrompt(newPrompt);
+                                            addToHistory(newPrompt);
+                                        }}
+                                        className="px-3 py-2 border-2 rounded"
+                                    >
+                                        {SHOT_TYPES.map(s => (
+                                            <option key={s.value} value={s.value}>{s.label}</option>
+                                        ))}
+                                    </select>
+                                    <select
+                                        value={formData.cameraMovement}
+                                        onChange={(e) => {
+                                            updateFormData('cameraMovement', e.target.value);
+                                            const newPrompt = generatePrompt();
+                                            setEditedPrompt(newPrompt);
+                                            addToHistory(newPrompt);
+                                        }}
+                                        className="px-3 py-2 border-2 rounded"
+                                    >
+                                        {CAMERA_MOVEMENTS.map(m => (
+                                            <option key={m.value} value={m.value}>{m.label}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+        };
+
+        const renderStepContent = () => {
+            switch(step) {
+                case 0:
+                    return (
+                        <div className="space-y-6">
+                            <h2 className="text-2xl font-bold mb-6">プロンプトスタイル選択</h2>
+                            <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
+                                <p className="text-sm text-yellow-800">
+                                    <strong>💡 重要:</strong> フリーライティングで成功した経験がある場合は「自然文スタイル」を推奨
+                                </p>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <button
+                                    onClick={() => setPromptStyle('natural')}
+                                    className={`p-8 rounded-xl border-2 ${
+                                        promptStyle === 'natural' 
+                                            ? 'border-green-500 bg-green-50' 
+                                            : 'border-gray-200'
+                                    }`}
+                                >
+                                    <div className="text-4xl mb-3">✍️</div>
+                                    <h3 className="text-xl font-bold mb-2">自然文スタイル</h3>
+                                    <p className="text-sm text-gray-600 mb-3">フリーライティング風</p>
+                                    <div className="text-left text-xs bg-white p-3 rounded">
+                                        <strong>特徴:</strong><br/>
+                                        • シンプルで読みやすい<br/>
+                                        • 映画的な自然な描写<br/>
+                                        • 構造化せず流れるような文章<br/>
+                                        • <strong className="text-green-600">推奨：品質重視</strong>
+                                    </div>
+                                </button>
+                                <button
+                                    onClick={() => setPromptStyle('structured')}
+                                    className={`p-8 rounded-xl border-2 ${
+                                        promptStyle === 'structured' 
+                                            ? 'border-purple-500 bg-purple-50' 
+                                            : 'border-gray-200'
+                                    }`}
+                                >
+                                    <div className="text-4xl mb-3">📋</div>
+                                    <h3 className="text-xl font-bold mb-2">構造化スタイル</h3>
+                                    <p className="text-sm text-gray-600 mb-3">セクション分け型</p>
+                                    <div className="text-left text-xs bg-white p-3 rounded">
+                                        <strong>特徴:</strong><br/>
+                                        • セクション別に整理<br/>
+                                        • 細かい制御が可能<br/>
+                                        • 後から編集しやすい<br/>
+                                        • 複雑な要素を管理
+                                    </div>
+                                </button>
+                            </div>
+                        </div>
+                    );
+
+                case 1:
+                    return (
+                        <div className="space-y-4">
+                            <h2 className="text-2xl font-bold mb-6">ジャンル選択</h2>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {Object.entries(TEMPLATES).map(([key, template]) => (
+                                    <button
+                                        key={key}
+                                        onClick={() => updateFormData('genre', key)}
+                                        className={`p-6 rounded-xl border-2 ${
+                                            formData.genre === key 
+                                                ? 'border-purple-500 bg-purple-50' 
+                                                : 'border-gray-200'
+                                        }`}
+                                    >
+                                        <div className="text-4xl mb-2">{template.icon}</div>
+                                        <h3 className="text-lg font-bold">{template.name}</h3>
+                                        <p className="text-sm text-gray-600 mt-2">{template.description}</p>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    );
+
+                case 2:
+                    return (
+                        <div className="space-y-6">
+                            <h2 className="text-2xl font-bold mb-4">コンセプト</h2>
+                            <div className="bg-green-50 border-l-4 border-green-400 p-4 mb-4">
+                                <p className="text-sm text-green-800">
+                                    <strong>✨ 自動最適化ON:</strong> 「〜して」「作成して」などは自動削除されます
+                                </p>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-semibold mb-2">どんな動画？</label>
+                                <textarea
+                                    value={formData.concept}
+                                    onChange={(e) => updateFormData('concept', e.target.value)}
+                                    placeholder="例: ゴルフ7ヴァリアントのCMを作成して。アウトバーンを走るシーン"
+                                    className="w-full px-4 py-3 border-2 rounded-lg h-32"
+                                />
+                                {formData.concept && (
+                                    <div className="mt-2 p-3 bg-blue-50 rounded">
+                                        <p className="text-xs text-blue-800">
+                                            <strong>最適化後:</strong> {optimizeConcept(formData.concept)}
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    );
+
+                case 3:
+                    return (
+                        <div className="space-y-6">
+                            <h2 className="text-2xl font-bold mb-4">シーン設定</h2>
+                            <div>
+                                <label className="block text-sm font-semibold mb-2">被写体</label>
+                                <input
+                                    type="text"
+                                    value={formData.subject}
+                                    onChange={(e) => updateFormData('subject', e.target.value)}
+                                    placeholder="例: White Volkswagen Golf 7 Variant / おまかせ"
+                                    className="w-full px-4 py-3 border-2 rounded-lg"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-semibold mb-2">場所</label>
+                                <input
+                                    type="text"
+                                    value={formData.location}
+                                    onChange={(e) => updateFormData('location', e.target.value)}
+                                    placeholder="例: German Autobahn / おまかせ"
+                                    className="w-full px-4 py-3 border-2 rounded-lg"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-semibold mb-2">時間帯</label>
+                                <input
+                                    type="text"
+                                    value={formData.timeOfDay}
+                                    onChange={(e) => updateFormData('timeOfDay', e.target.value)}
+                                    placeholder="例: golden hour sunset / おまかせ"
+                                    className="w-full px-4 py-3 border-2 rounded-lg"
+                                />
+                            </div>
+                        </div>
+                    );
+
+                case 4:
+                    return (
+                        <div className="space-y-6">
+                            <h2 className="text-2xl font-bold mb-4">カメラワーク</h2>
+                            <div>
+                                <label className="block text-sm font-semibold mb-3">ショット</label>
+                                <div className="grid grid-cols-2 gap-3">
+                                    {SHOT_TYPES.map(shot => (
+                                        <button
+                                            key={shot.value}
+                                            onClick={() => updateFormData('shotType', shot.value)}
+                                            className={`p-4 rounded-lg border-2 ${
+                                                formData.shotType === shot.value
+                                                    ? 'border-purple-500 bg-purple-50'
+                                                    : 'border-gray-200'
+                                            }`}
+                                        >
+                                            <div className="font-semibold">{shot.label}</div>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-semibold mb-3">動き</label>
+                                <div className="grid grid-cols-2 gap-3">
+                                    {CAMERA_MOVEMENTS.map(movement => (
+                                        <button
+                                            key={movement.value}
+                                            onClick={() => updateFormData('cameraMovement', movement.value)}
+                                            className={`p-4 rounded-lg border-2 ${
+                                                formData.cameraMovement === movement.value
+                                                    ? 'border-purple-500 bg-purple-50'
+                                                    : 'border-gray-200'
+                                            }`}
+                                        >
+                                            <div className="font-semibold">{movement.label}</div>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    );
+
+                case 5:
+                    return (
+                        <div className="space-y-6">
+                            <h2 className="text-2xl font-bold mb-4">照明・色調</h2>
+                            <div>
+                                <label className="block text-sm font-semibold mb-3">照明</label>
+                                <div className="grid grid-cols-2 gap-3">
+                                    {LIGHTING_MOODS.map(mood => (
+                                        <button
+                                            key={mood.value}
+                                            onClick={() => updateFormData('lighting', mood.value)}
+                                            className={`p-4 rounded-lg border-2 ${
+                                                formData.lighting === mood.value
+                                                    ? 'border-purple-500 bg-purple-50'
+                                                    : 'border-gray-200'
+                                            }`}
+                                        >
+                                            <div className="font-semibold">{mood.label}</div>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-semibold mb-2">カラーパレット</label>
+                                <input
+                                    type="text"
+                                    value={formData.palette}
+                                    onChange={(e) => updateFormData('palette', e.target.value)}
+                                    placeholder="例: teal, orange, white"
+                                    className="w-full px-4 py-3 border-2 rounded-lg"
+                                />
+                            </div>
+                        </div>
+                    );
+
+                case 6:
+                    return (
+                        <div className="space-y-6">
+                            <h2 className="text-2xl font-bold mb-4">アクション</h2>
+                            <div>
+                                <label className="block text-sm font-semibold mb-2">0-3秒</label>
+                                <input
+                                    type="text"
+                                    value={formData.action1}
+                                    onChange={(e) => updateFormData('action1', e.target.value)}
+                                    placeholder="例: 車がアウトバーンを加速"
+                                    className="w-full px-4 py-3 border-2 rounded-lg"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-semibold mb-2">3-6秒</label>
+                                <input
+                                    type="text"
+                                    value={formData.action2}
+                                    onChange={(e) => updateFormData('action2', e.target.value)}
+                                    placeholder="例: カメラが横から追跡"
+                                    className="w-full px-4 py-3 border-2 rounded-lg"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-semibold mb-2">6-10秒</label>
+                                <input
+                                    type="text"
+                                    value={formData.action3}
+                                    onChange={(e) => updateFormData('action3', e.target.value)}
+                                    placeholder="例: 夕日に向かって走る"
+                                    className="w-full px-4 py-3 border-2 rounded-lg"
+                                />
+                            </div>
+                        </div>
+                    );
+
+                case 7:
+                    return (
+                        <div className="space-y-6">
+                            <h2 className="text-2xl font-bold mb-4">音声・言語</h2>
+                            <div>
+                                <label className="block text-sm font-semibold mb-3">言語</label>
+                                <div className="grid grid-cols-4 gap-3">
+                                    {LANGUAGES.map(lang => (
+                                        <button
+                                            key={lang.code}
+                                            onClick={() => updateFormData('language', lang.code)}
+                                            className={`p-3 rounded-lg border-2 ${
+                                                formData.language === lang.code
+                                                    ? 'border-purple-500 bg-purple-50'
+                                                    : 'border-gray-200'
+                                            }`}
+                                        >
+                                            <div className="text-2xl">{lang.flag}</div>
+                                            <div className="text-xs font-semibold">{lang.name}</div>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-semibold mb-2">セリフ</label>
+                                <input
+                                    type="text"
+                                    value={formData.dialogue}
+                                    onChange={(e) => updateFormData('dialogue', e.target.value)}
+                                    placeholder="例: 三河のアウトバーン"
+                                    className="w-full px-4 py-3 border-2 rounded-lg"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-semibold mb-2">環境音</label>
+                                <input
+                                    type="text"
+                                    value={formData.ambientSound}
+                                    onChange={(e) => updateFormData('ambientSound', e.target.value)}
+                                    placeholder="例: engine sound, wind"
+                                    className="w-full px-4 py-3 border-2 rounded-lg"
+                                />
+                            </div>
+                        </div>
+                    );
+
+                case 8:
+                    return (
+                        <div className="space-y-6">
+                            <h2 className="text-2xl font-bold mb-4">完成！🎉</h2>
+
+                            <div className="bg-green-50 border-l-4 border-green-400 p-4">
+                                <p className="text-sm text-green-800">
+                                    <strong>✨ スタイル:</strong> {promptStyle === 'natural' ? '自然文（フリーライティング風）' : '構造化'}
+                                </p>
+                            </div>
+
+                            {renderEditPanel()}
+
+                            <div className="bg-purple-50 p-6 rounded-xl">
+                                <div className="flex justify-between mb-4 flex-wrap gap-2">
+                                    <h3 className="text-lg font-semibold">生成プロンプト</h3>
+                                    <div className="flex gap-2 flex-wrap">
+                                        <button
+                                            onClick={() => setEditMode(editMode === 'direct' ? 'view' : 'direct')}
+                                            className="px-3 py-2 bg-blue-600 text-white rounded-lg text-sm"
+                                        >
+                                            ✏️ 直接編集
+                                        </button>
+                                        <button
+                                            onClick={() => setEditMode(editMode === 'section' ? 'view' : 'section')}
+                                            className="px-3 py-2 bg-indigo-600 text-white rounded-lg text-sm"
+                                        >
+                                            🎯 セクション編集
+                                        </button>
+                                        <button
+                                            onClick={() => copyToClipboard(editedPrompt)}
+                                            className="px-3 py-2 bg-purple-600 text-white rounded-lg text-sm"
+                                        >
+                                            📋 コピー
+                                        </button>
+                                        <button
+                                            onClick={savePrompt}
+                                            className="px-3 py-2 bg-green-600 text-white rounded-lg text-sm"
+                                        >
+                                            💾 保存
+                                        </button>
+                                    </div>
+                                </div>
+                                <pre className="bg-white p-4 rounded-lg text-sm overflow-auto max-h-96 whitespace-pre-wrap">
+```
+
+{editedPrompt}
+</pre>
+</div>
+
+```
+                            <div className="bg-white rounded-xl p-6">
+                                <h4 className="font-semibold mb-4">⚡ クイック調整</h4>
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                    <button
+                                        onClick={() => applyQuickAdjustment('more_detail')}
+                                        className="p-3 bg-blue-50 border-2 border-blue-200 rounded-lg"
+                                    >
+                                        <div className="text-2xl mb-1">🔍</div>
+                                        <div className="text-sm font-semibold">詳細化</div>
+                                    </button>
+                                    <button
+                                        onClick={() => applyQuickAdjustment('simplify')}
+                                        className="p-3 bg-green-50 border-2 border-green-200 rounded-lg"
+                                    >
+                                        <div className="text-2xl mb-1">📝</div>
+                                        <div className="text-sm font-semibold">シンプル化</div>
+                                    </button>
+                                    <button
+                                        onClick={() => applyQuickAdjustment('dramatic')}
+                                        className="p-3 bg-red-50 border-2 border-red-200 rounded-lg"
+                                    >
+                                        <div className="text-2xl mb-1">🎭</div>
+                                        <div className="text-sm font-semibold">ドラマチック</div>
+                                    </button>
+                                    <button
+                                        onClick={() => applyQuickAdjustment('natural')}
+                                        className="p-3 bg-yellow-50 border-2 border-yellow-200 rounded-lg"
+                                    >
+                                        <div className="text-2xl mb-1">🌿</div>
+                                        <div className="text-sm font-semibold">ナチュラル</div>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="bg-white rounded-xl p-6">
+                                <h4 className="font-semibold mb-4">🤖 AI改善提案</h4>
+                                <button
+                                    onClick={() => copyToClipboard(getAIImprovementTemplate())}
+                                    className="w-full px-4 py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg"
+                                >
+                                    📋 AI改善テンプレートをコピー
+                                </button>
+                            </div>
+
+                            {showComparison && generatedPrompt !== editedPrompt && (
+                                <div className="bg-white rounded-xl p-6">
+                                    <h4 className="font-semibold mb-4">🔄 修正前後の比較</h4>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                            <h5 className="text-sm font-semibold text-gray-600 mb-2">オリジナル</h5>
+                                            <pre className="bg-gray-50 p-3 rounded text-xs overflow-auto max-h-60 whitespace-pre-wrap">
+```
+
+{generatedPrompt}
+</pre>
+</div>
+<div>
+<h5 className="text-sm font-semibold text-purple-600 mb-2">修正後</h5>
+<pre className="bg-purple-50 p-3 rounded text-xs overflow-auto max-h-60 whitespace-pre-wrap">
+{editedPrompt}
+</pre>
+</div>
+</div>
+</div>
+)}
+
+```
+                            <div className="flex gap-2 flex-wrap">
+                                <button
+                                    onClick={() => setShowComparison(!showComparison)}
+                                    className="px-4 py-2 bg-gray-200 rounded-lg text-sm"
+                                >
+                                    {showComparison ? '比較を閉じる' : '📊 修正前後を比較'}
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        generateBatchVariations();
+                                        setCurrentTab('batch');
+                                    }}
+                                    className="flex-1 px-4 py-3 bg-green-600 text-white rounded-lg"
+                                >
+                                    🎲 バッチ生成
+                                </button>
+                            </div>
+                        </div>
+                    );
+
+                default:
+                    return null;
+            }
+        };
+
+        return (
+            <div className="min-h-screen bg-gray-50">
+                <div className="gradient-bg text-white py-8 px-4">
+                    <div className="max-w-6xl mx-auto">
+                        <h1 className="text-3xl font-bold mb-2">Sora 2 プロンプト作成ツール Final</h1>
+                        <p className="text-purple-100">自動最適化 + フリーライティングモード v4.0</p>
+                    </div>
+                </div>
+
+                <div className="bg-white border-b sticky top-0 z-20">
+                    <div className="max-w-6xl mx-auto px-4">
+                        <div className="flex gap-1 overflow-x-auto">
+                            {[
+                                { id: 'generator', icon: '✨', label: '作成' },
+                                { id: 'saved', icon: '💾', label: `保存(${savedPrompts.length})` },
+                                { id: 'batch', icon: '🎲', label: 'バッチ' }
+                            ].map(tab => (
+                                <button
+                                    key={tab.id}
+                                    onClick={() => setCurrentTab(tab.id)}
+                                    className={`px-6 py-4 font-semibold ${
+                                        currentTab === tab.id ? 'tab-active' : 'text-gray-600'
+                                    }`}
+                                >
+                                    {tab.icon} {tab.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="max-w-6xl mx-auto px-4 py-8">
+                    {currentTab === 'generator' && (
+                        <>
+                            <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
+                                <div className="flex justify-between items-center overflow-x-auto">
+                                    {steps.map((s, index) => (
+                                        <div key={index} className="flex items-center">
+                                            <div className="flex flex-col items-center">
+                                                <div 
+                                                    className={`w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold step-indicator ${
+                                                        index === step ? 'active' : index < step ? 'completed' : 'bg-gray-200 text-gray-600'
+                                                    }`}
+                                                >
+                                                    {s.icon}
+                                                </div>
+                                            </div>
+                                            {index < steps.length - 1 && (
+                                                <div className={`w-8 h-1 mx-2 ${index < step ? 'bg-green-500' : 'bg-gray-200'}`} />
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="bg-white rounded-2xl shadow-lg p-6">
+                                {renderStepContent()}
+
+                                <div className="flex gap-4 mt-8 pt-6 border-t">
+                                    {step > 0 && step < steps.length - 1 && (
+                                        <button
+                                            onClick={handleBack}
+                                            className="px-6 py-3 bg-gray-200 rounded-lg"
+                                        >
+                                            ← 戻る
+                                        </button>
+                                    )}
+                                    {step < steps.length - 1 && (
+                                        <button
+                                            onClick={handleNext}
+                                            disabled={!canProceed()}
+                                            className={`flex-1 px-6 py-3 rounded-lg ${
+                                                canProceed()
+                                                    ? 'bg-purple-600 text-white'
+                                                    : 'bg-gray-300 text-gray-500'
+                                            }`}
+                                        >
+                                            {step === steps.length - 2 ? '生成 ✨' : '次へ →'}
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        </>
+                    )}
+
+                    {currentTab === 'saved' && (
+                        <div className="bg-white rounded-2xl shadow-lg p-6">
+                            <h2 className="text-2xl font-bold mb-6">💾 保存済み</h2>
+                            {savedPrompts.length === 0 ? (
+                                <div className="text-center py-12">
+                                    <div className="text-6xl mb-4">📝</div>
+                                    <p className="text-gray-600">保存なし</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-4">
+                                    {savedPrompts.map(saved => (
+                                        <div key={saved.id} className="border-2 rounded-xl p-4">
+                                            <div className="flex justify-between items-start mb-3">
+                                                <div>
+                                                    <h3 className="font-bold">{saved.name}</h3>
+                                                    <p className="text-sm text-gray-500">
+                                                        {new Date(saved.createdAt).toLocaleString('ja-JP')}
+                                                        {saved.style && ` • ${saved.style === 'natural' ? '自然文' : '構造化'}`}
+                                                    </p>
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    <button
+                                                        onClick={() => loadPrompt(saved)}
+                                                        className="px-3 py-1 bg-purple-100 text-purple-700 rounded text-sm"
+                                                    >
+                                                        読込
+                                                    </button>
+                                                    <button
+                                                        onClick={() => copyToClipboard(saved.prompt)}
+                                                        className="px-3 py-1 bg-blue-100 text-blue-700 rounded text-sm"
+                                                    >
+                                                        コピー
+                                                    </button>
+                                                    <button
+                                                        onClick={() => deletePrompt(saved.id)}
+                                                        className="px-3 py-1 bg-red-100 text-red-700 rounded text-sm"
+                                                    >
+                                                        削除
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <div className="bg-gray-50 p-3 rounded text-xs overflow-auto max-h-32">
+                                                <pre className="whitespace-pre-wrap">{saved.prompt}</pre>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {currentTab === 'batch' && (
+                        <div className="bg-white rounded-2xl shadow-lg p-6">
+                            <h2 className="text-2xl font-bold mb-6">🎲 バッチ生成</h2>
+                            {batchVariations.length === 0 ? (
+                                <div className="text-center py-12">
+                                    <div className="text-6xl mb-4">🎬</div>
+                                    <p className="text-gray-600">プロンプト作成後「バッチ生成」を押す</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-4">
+                                    {batchVariations.map((variation, idx) => (
+                                        <div key={idx} className="border-2 rounded-xl p-4">
+                                            <div className="flex justify-between items-start mb-3">
+                                                <div>
+                                                    <h3 className="font-bold">{variation.name}</h3>
+                                                    <p className="text-sm text-gray-600">{variation.changes}</p>
+                                                </div>
+                                                <button
+                                                    onClick={() => copyToClipboard(variation.prompt)}
+                                                    className="px-4 py-2 bg-purple-600 text-white rounded-lg"
+                                                >
+                                                    📋 コピー
+                                                </button>
+                                            </div>
+                                            <div className="bg-gray-50 p-3 rounded text-xs overflow-auto max-h-40">
+                                                <pre className="whitespace-pre-wrap">{variation.prompt}</pre>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+
+                <div className="bg-gray-800 text-white py-6 px-4 mt-16">
+                    <div className="max-w-6xl mx-auto text-center">
+                        <p className="text-sm text-gray-400">💡 Sora 2 プロンプト作成ツール Final v4.0</p>
+                        <p className="text-xs text-gray-500 mt-2">コンセプト自動最適化 + フリーライティングモード搭載</p>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    ReactDOM.render(<Sora2PromptGenerator />, document.getElementById('root'));
+</script>
+```
+
+</body>
+</html>
